@@ -1,0 +1,18 @@
+# Python
+venv/
+__pycache__/
+*.py[cod]
+
+# Electron / Node
+node_modules/
+dist/
+
+# LiDAR / Data Files
+*.laz
+*.las
+*.pts
+*.ply
+
+# OS files
+.DS_Store
+Thumbs.db

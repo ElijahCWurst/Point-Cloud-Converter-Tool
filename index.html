@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>LiDAR to Raster</title>
+    <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com;">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/noUiSlider/15.7.1/nouislider.min.css" rel="stylesheet">
+
+    <style>
+        body { font-family: 'Arial', sans-serif; padding: 30px; background: #f4f4f9; color: #333; }
+        .card { background: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); max-width: 600px; min-width: 400px; margin: 0 auto; }
+        h2 { margin-top: 0; color: #636363; }
+        .group { margin-bottom: 20px; }
+        label { display: block; margin-bottom: 8px; font-weight: 600; font-size: 0.9em; color:#636363; }
+        input[type="text"], input[type="number"], select { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px; box-sizing: border-box; }
+        
+        /* --- SHARED BUTTON STYLES (The Red Look) --- */
+        .std-btn {
+            background: #cc163e; 
+            color: white; 
+            border: none; 
+            cursor: pointer; 
+            border-radius: 5px; 
+            font-size: 1em; 
+            transition: background 0.3s, color 0.3s;
+        }
+        .std-btn:hover { background: #9e1130; }
+        .std-btn:disabled { background: #ccc; cursor: not-allowed; color: #666; }
+
+        /* --- HISTOGRAM BUTTON SPECIFICS --- */
+        #histBtn {
+            width: auto; 
+            padding: 10px 15px; 
+            font-size: 0.9em; 
+            white-space: nowrap;
+        }
+
+        /* --- RUN BUTTON SPECIFICS (Progress Bar Container) --- */
+        #runBtn {
+            position: relative; /* Needed for absolute positioning of children */
+            padding: 12px 20px; 
+            width: 100%; 
+            overflow: hidden; /* Ensures the bar doesn't stick out */
+            z-index: 1;
+        }
+        
+        /* The "Loading" state (background turns gray, text turns dark initially) */
+        #runBtn.loading {
+            background: #e0e0e0; 
+            color: #333; 
+            cursor: wait;
+        }
+
+        /* The Progress Fill (Red bar sliding in from left) */
+        .btn-fill {
+            position: absolute;
+            top: 0;
+            left: 0;
+            height: 100%;
+            width: 0%; /* Starts empty */
+            background-color: #cc163e;
+            transition: width 0.2s ease;
+            z-index: -1; /* Behind the text */
+        }
+
+        /* The Text Label layer */
+        .btn-text {
+            position: relative;
+            z-index: 2; /* On top of everything */
+        }
+
+        /* --------------------------- */
+        /* TOOLTIPS CSS                */
+        /* --------------------------- */
+        
+        /* Class to apply to anything needing a tooltip */
+        .has-tooltip {
+            position: relative;
+            width: fit-content; /* Ensures tooltip centers over the text, not the full width block */
+        }
+
+        /* The Tooltip Bubble */
+        .has-tooltip::after {
+            content: attr(data-tooltip); /* Pulls text from HTML attribute */
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            margin-bottom: 8px;
+            background: #333;
+            color: #fff;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            white-space: nowrap;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.2s;
+            pointer-events: none;
+            z-index: 999;
+            font-weight: normal;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+
+        /* The Little Triangle Arrow */
+        .has-tooltip::before {
+            content: "";
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            margin-left: -5px;
+            margin-bottom: 3px;
+            border-width: 5px;
+            border-style: solid;
+            border-color: #333 transparent transparent transparent;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.2s;
+            pointer-events: none;
+            z-index: 999;
+        }
+
+        /* Show on Hover */
+        .has-tooltip:hover::after,
+        .has-tooltip:hover::before {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        /* --------------------------- */
+
+        #status { margin-top: 20px; padding: 10px; border-radius: 5px; font-size: 0.9em; text-align: center; display: none; overflow-wrap: break-word; word-wrap: break-word; word-break: break-word;}
+        .success { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; }
+        .info { background: #cce5ff; color: #004085; }
+        
+        /* File Input Styling */
+        .noUi-value-horizontal { padding-top: 5px; }
+        input[type="file"]::file-selector-button {
+            background-color: white; color: #cc163e; border: #cc163e 1px solid;
+            padding: 12px 20px; border-radius: 5px; cursor: pointer; margin-right: 15px;
+            transition: background .2s ease-in-out;
+        }
+        input[type="file"]::file-selector-button:hover { background-color: #fef6f8; color: #9e1130; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div style="display: flex; gap: 10px;  margin-left: auto; justify-content: space-between; align-items: center;">
+            <h2><b>LiDAR Mapper</b></h2>
+            <div>
+                <img src="usfs.png" alt="USFS Logo" style="height: 50px;">
+                <img src="nnu_logo.webp" alt="NNU Logo" style="height: 50px;">
+            </div>
+        </div>
+        
+        <div class="group">
+            <label class="has-tooltip" data-tooltip="The raw .las or .laz point cloud file">1. Select LAS/LAZ File</label>
+            <div style="display: flex; gap: 10px; align-items: center;">
+                <input class="file-button" type="file" id="fileInput" accept=".las,.laz" style="flex-grow: 1;">
+                
+                <button id="histBtn" type="button" class="std-btn has-tooltip" disabled data-tooltip="View height distribution graph">
+                    View Histogram
+                </button>
+            </div>
+            <div id="histStatus" style="font-size: 0.8em; color: #666; margin-top: 5px; text-align: right; height: 15px;"></div>
+        </div>
+
+        <div class="group">
+            <label class="has-tooltip" data-tooltip="CHM = Max Height. Cover = Canopy Density.">2. Select Mode</label>
+            <select id="modeInput" class="js-mode-select">
+                <option value="height">Canopy Height Model (CHM)</option>
+                <option value="cover">Canopy Cover %</option>
+            </select>
+        </div>
+
+        <div class="group">
+            <label class="has-tooltip" data-tooltip="Output pixel size in meters (e.g., 30m)">3. Resolution (Meters)</label>
+            <input type="number" id="resInput" value="30" step="1" min="1" max="100" onkeydown="return event.keyCode !== 69 && event.keyCode !== 190 && event.keyCode !== 110 && event.keyCode !== 189">
+        </div>
+
+        <div class="group js-slider-bars"></div>
+        <div class="group js-resampling-options">
+            <label class="has-tooltip" data-tooltip="Percentile used as the tree top height (e.g., 95%)">4. Relative Height Percentile (RH %)</label>
+            <input type="number" id="resampleInput" class="js-resample-select" step="1" min="1" max="100" value="95" onkeydown="return event.keyCode !== 69 && event.keyCode !== 190 && event.keyCode !== 110 && event.keyCode !== 189">
+        </div>
+
+        <div class="has-tooltip" style="width: 100%;" data-tooltip="Begin processing (may take time)">
+            <button id="runBtn" class="std-btn">
+                <div class="btn-fill" id="btnFill"></div>
+                <span class="btn-text" id="btnText">Generate Raster</span>
+            </button>
+        </div>
+        
+        <div id="status"></div>
+    </div>
+
+    <div id="imageModal" style="display: none; position: fixed; z-index: 100; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.8);">
+        <div style="position: relative; margin: 5% auto; padding: 0; width: 80%; max-width: 700px;">
+            <span id="closeModal" style="color: white; position: absolute; top: -30px; right: 0; font-size: 28px; font-weight: bold; cursor: pointer;">&times;</span>
+            <img class="modal-content" id="modalImg" style="width: 100%; border-radius: 5px;">
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/noUiSlider/15.7.1/nouislider.min.js"></script>
+    <script src="renderer.js"></script>
+</body>
+</html>
